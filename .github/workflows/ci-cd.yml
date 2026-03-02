@@ -1,52 +1,59 @@
-# Remplacer DOCKERHUB_USERNAME par DOCKER_USERNAME
-# Remplacer DOCKERHUB_TOKEN par DOCKER_PASSWORD
-
 name: CI Pipeline
 
+# Étape 1 - Déclencheur sur push sur main
 on:
   push:
     branches:
       - main
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
     steps:
+      # Étape 1 - Récupération du code source
       - name: Récupération du code source
         uses: actions/checkout@v4
 
+      # ========== PARTIE MANQUANTE AJOUTÉE ICI ==========
+      # Setup Java pour compiler le JAR
       - name: Setup Java 11
         uses: actions/setup-java@v3
         with:
           java-version: '11'
           distribution: 'temurin'
 
+      # Compiler le JAR Spring Boot (obligatoire pour l'image Docker)
       - name: Build Spring Boot JAR
         run: |
           cd springboot/app
           chmod +x mvnw
           ./mvnw clean package -DskipTests
+      # ========== FIN DE LA PARTIE AJOUTÉE ==========
 
-      # MODIFICATION ICI : utiliser les noms de secrets existants
+      # Étape 2 - Connexion à Docker Hub avec les secrets
       - name: Connexion à Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Étape 2 - Construction de l'image backend
       - name: Construction de l'image backend
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/springboot-app:latest ./springboot/app
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/springboot-app:latest ./springboot/app
 
+      # Étape 2 - Construction de l'image frontend
       - name: Construction de l'image frontend
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/angular-app:latest ./angular-app
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/angular-app:latest ./angular-app
 
+      # Étape 2 - Publication des images sur Docker Hub
       - name: Publication de l'image backend
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/springboot-app:latest
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/springboot-app:latest
 
       - name: Publication de l'image frontend
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/angular-app:latest
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/angular-app:latest
 
+      # Étape 3 - Test de l'application avec Docker Compose
+      # Note: Utiliser 'docker compose' (v2) au lieu de 'docker-compose' (v1)
       - name: Lancement de l'application avec Docker Compose
         run: docker compose up -d
 
@@ -58,10 +65,11 @@ jobs:
       - name: Vérification de la communication frontend/backend
         run: |
           echo "Vérification du backend (port 8081)..."
-          curl -f http://localhost:8081/actuator/health || echo "❌ Backend ne répond pas"
+          curl -f http://localhost:8081/actuator/health && echo "✅ Backend OK" || echo "❌ Backend ne répond pas"
           echo "Vérification du frontend (port 4200)..."
-          curl -f http://localhost:4200 || echo "❌ Frontend ne répond pas"
+          curl -f http://localhost:4200 && echo "✅ Frontend OK" || echo "❌ Frontend ne répond pas"
 
+      # Affichage des logs en cas d'échec
       - name: Affichage des logs en cas d'échec
         if: failure()
         run: docker compose logs
